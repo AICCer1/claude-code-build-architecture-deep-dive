@@ -798,28 +798,28 @@ AgentTool 真正落地时，至少要跨过四层：
 
 ```mermaid
 flowchart TD
-    Request[AgentTool request] --> ResolveAgent[resolve agent definition / model / permissions]
-    ResolveAgent --> Isolation{isolation / target}
-    Isolation --> Local[local agent]
-    Isolation --> Worktree[worktree agent]
-    Isolation --> Remote[remote agent]
-    Isolation --> Teammate[in-process teammate]
+    Request[AgentTool request] --> ResolveAgent[resolve agent settings]
+    ResolveAgent --> Isolation{choose target}
+    Isolation --> Local[local]
+    Isolation --> Worktree[worktree]
+    Isolation --> Remote[remote]
+    Isolation --> Teammate[teammate]
 
-    Local --> RegisterTask[register LocalAgentTask]
+    Local --> RegisterTask[register local task]
     Worktree --> RegisterTask
-    Remote --> RegisterRemote[register RemoteAgentTask]
-    Teammate --> RegisterMate[register InProcessTeammateTask]
+    Remote --> RegisterRemote[register remote task]
+    Teammate --> RegisterMate[register teammate task]
 
-    RegisterTask --> RunAgent[runAgent.ts]
-    RegisterRemote --> RemoteExec[remote execution path]
+    RegisterTask --> RunAgent[runAgent]
+    RegisterRemote --> RemoteExec[remote path]
     RegisterMate --> RunAgent
 
-    RunAgent --> Stream[query() stream from subagent]
-    Stream --> Progress[updateProgressFromMessage]
-    Stream --> Sidechain[record sidechain transcript / output file]
-    Progress --> AppState[AppState.tasks]
+    RunAgent --> Stream[subagent stream]
+    Stream --> Progress[progress update]
+    Stream --> Sidechain[sidechain transcript and output]
+    Progress --> AppState[task state in AppState]
     Sidechain --> AppState
-    AppState --> UI[panel / footer / notifications]
+    AppState --> UI[panel footer notifications]
 ```
 
 ```mermaid
@@ -842,11 +842,11 @@ stateDiagram-v2
 
 ```mermaid
 flowchart LR
-    AgentMessages[agent messages] --> ProgressTracker[ProgressTracker]
-    ProgressTracker --> Usage[input/output token accounting]
-    ProgressTracker --> Activities[recent tool activities]
-    ProgressTracker --> Summary[AgentProgress summary]
-    Summary --> TaskState[LocalAgentTaskState.progress]
+    AgentMessages[agent messages] --> ProgressTracker[progress tracker]
+    ProgressTracker --> Usage[token accounting]
+    ProgressTracker --> Activities[recent tool activity]
+    ProgressTracker --> Summary[progress summary]
+    Summary --> TaskState[task progress state]
 ```
 
 **核心结论：**
