@@ -166,6 +166,49 @@ stateDiagram-v2
 - 这是个**回合状态机**，不是一次性请求函数
 - 工具调用、stop hooks、压缩、恢复都是主循环内建语义
 
+### 4.1 长上下文治理：auto compact / reactive compact / context collapse / snip
+
+Query Runtime 里还有一条很重要但容易被忽略的支线：**上下文溢出治理**。
+
+这几套机制不是重复的，而是处在不同阶段：
+- `snipCompact`：先做轻量裁剪
+- `autoCompact`：达到阈值前置压缩
+- `contextCollapse`：更强的上下文折叠与 overflow 恢复
+- `reactiveCompact`：在真正遇到 413 / prompt-too-long 后补救
+
+```mermaid
+flowchart TD
+    Start[进入一轮 query] --> Snip[snipCompactIfNeeded]
+    Snip --> CollapseApply[applyCollapsesIfNeeded]
+    CollapseApply --> Budget[检查 token budget / blocking limit]
+    Budget -->|超 auto compact 阈值| AutoCompact[autoCompactIfNeeded]
+    Budget -->|未超阈值| CallModel[callModel]
+    AutoCompact --> CallModel
+
+    CallModel --> Response{模型响应}
+    Response -->|正常| Continue[继续回合]
+    Response -->|prompt too long / 413| Recover[overflow recovery]
+    Recover --> CollapseRecover[contextCollapse.recoverFromOverflow]
+    CollapseRecover -->|已恢复| Retry[重试 query]
+    CollapseRecover -->|未恢复| Reactive[reactiveCompact.tryReactiveCompact]
+    Reactive -->|成功| Retry
+    Reactive -->|失败| Error[返回错误/停止]
+```
+
+```mermaid
+flowchart LR
+    A[snipCompact] --> A1[轻量剪裁 / 减少冗余]
+    B[autoCompact] --> B1[达到阈值前主动压缩]
+    C[contextCollapse] --> C1[折叠上下文 / 溢出恢复]
+    D[reactiveCompact] --> D1[实际报错后应急补救]
+```
+
+**这一块的核心价值不是“压缩一次对话”那么简单，而是：**
+- 保持主循环可继续
+- 避免长上下文直接卡死
+- 让 proactive 与 reactive 两套恢复路径并存
+- 为长会话 / agentic 场景提供真正可运行的上下文治理能力
+
 ---
 
 ## 5. Tool Plane：系统“能做什么”
@@ -380,6 +423,63 @@ flowchart LR
 - Hook Plane 是**治理总线**
 - 它把权限、审计、改写、阻断、附加上下文统统统一起来了
 
+### 7.1 StopHooks：回合结束时的后台动作收口点
+
+`query/stopHooks.ts` 不只是“最后收个尾”，它其实是整轮结束时的**后台动作调度中心**。
+
+Stop 阶段会做几件不同层级的事：
+- 生成 stop hook context
+- 保存 cache-safe params
+- 执行 stop hooks
+- 触发 prompt suggestion
+- 触发 extract memories
+- 触发 auto dream
+- 某些模式下做 job classification / computer-use cleanup
+
+```mermaid
+flowchart TD
+    TurnEnd[本轮没有新的 tool_use / 准备结束] --> BuildCtx[构造 REPLHookContext]
+    BuildCtx --> SaveParams[saveCacheSafeParams]
+    SaveParams --> StopHooks[executeStopHooks]
+
+    BuildCtx --> Suggest[executePromptSuggestion]
+    BuildCtx --> Extract[executeExtractMemories]
+    BuildCtx --> Dream[executeAutoDream]
+
+    BuildCtx --> JobClassifier[classifyAndWriteState]
+    BuildCtx --> Cleanup[computer use cleanup]
+
+    StopHooks --> Summary[summary / blocking errors / prevent continuation]
+    Suggest --> Background[fire-and-forget background actions]
+    Extract --> Background
+    Dream --> Background
+```
+
+```mermaid
+sequenceDiagram
+    participant Runtime as Query Runtime
+    participant Stop as handleStopHooks
+    participant Hooks as executeStopHooks
+    participant Prompt as PromptSuggestion
+    participant Mem as ExtractMemories
+    participant Dream as AutoDream
+
+    Runtime->>Stop: handleStopHooks(...)
+    Stop->>Stop: build REPLHookContext
+    Stop->>Stop: saveCacheSafeParams
+    Stop->>Hooks: executeStopHooks
+    Hooks-->>Stop: progress / errors / summaries
+    Stop->>Prompt: fire-and-forget
+    Stop->>Mem: fire-and-forget
+    Stop->>Dream: fire-and-forget
+    Stop-->>Runtime: blockingErrors / preventContinuation
+```
+
+**核心结论：**
+- stop 阶段是生命周期治理点
+- 也是 prompt suggestion、memory extraction、auto dream 的统一收口点
+- 所以它是“回合结束控制面”，不只是一个 finally 块
+
 ---
 
 ## 8. Memory Plane：这个仓最有层次感的一块
@@ -515,6 +615,60 @@ flowchart LR
     Wrapper --> ToolPool
 ```
 
+### 9.1.1 MCP client 细化：transport / auth / discovery / tool call
+
+```mermaid
+flowchart TD
+    Config[ScopedMcpServerConfig] --> Connect[connectToServer]
+    Connect --> Transport{transport type}
+    Transport --> Stdio[StdioClientTransport]
+    Transport --> SSE[SSEClientTransport]
+    Transport --> HTTP[StreamableHTTPClientTransport]
+    Transport --> WS[WebSocketTransport]
+    Transport --> SDK[SdkControlClientTransport]
+
+    Connect --> Auth[OAuth / token refresh / 401 handling]
+    Connect --> Session[session auth token / headers / proxy / mTLS]
+    Connect --> Client[Model Context Protocol Client]
+
+    Client --> Discovery[ListTools / ListResources / ListPrompts]
+    Discovery --> WrapTools[MCPTool wrappers]
+    Discovery --> WrapResources[Read/List resource tools]
+    Discovery --> WrapAuth[McpAuthTool]
+
+    WrapTools --> ToolPool[tool pool]
+    WrapResources --> ToolPool
+    WrapAuth --> ToolPool
+```
+
+```mermaid
+sequenceDiagram
+    participant Runtime as Query Runtime
+    participant MCPTool as MCPTool wrapper
+    participant Client as MCP client
+    participant Auth as OAuth/Auth helpers
+    participant Server as MCP server
+    participant Storage as output storage
+
+    Runtime->>MCPTool: call MCP tool
+    MCPTool->>Client: callTool(...)
+    Client->>Auth: check/refresh token if needed
+    Auth-->>Client: token ready / auth error
+    Client->>Server: JSON-RPC request over selected transport
+    Server-->>Client: result / error / binary content
+    Client->>Storage: truncate / persist binary / resize image if needed
+    Client-->>MCPTool: normalized result
+    MCPTool-->>Runtime: tool_result
+```
+
+**MCP client 的实际职责不是“帮你发个请求”，而是：**
+- 屏蔽多 transport 差异
+- 处理 OAuth / 401 / session 过期
+- 把 tools/resources/prompts 统一映射进系统
+- 管理大输出、二进制内容、图片 resize/downsample、tool result persist
+
+这也是为什么 `services/mcp/client.ts` 会这么大——它本质上是一个**外部能力接入中枢**。
+
 ### 9.2 LSP：语义代码理解子系统
 LSP 在这仓里不是一个 tool 文件，而是完整 server manager。
 
@@ -633,6 +787,72 @@ flowchart TD
     TaskState --> Panel[task panel]
     TaskState --> Footer[background task footer]
 ```
+
+### 10.3.1 AgentTool + Task Runtime 更细状态流
+
+AgentTool 真正落地时，至少要跨过四层：
+- 选择 agent definition
+- 选择隔离/运行方式
+- 注册 task runtime
+- 将执行过程映射到 AppState / transcript / output file
+
+```mermaid
+flowchart TD
+    Request[AgentTool request] --> ResolveAgent[resolve agent definition / model / permissions]
+    ResolveAgent --> Isolation{isolation / target}
+    Isolation --> Local[local agent]
+    Isolation --> Worktree[worktree agent]
+    Isolation --> Remote[remote agent]
+    Isolation --> Teammate[in-process teammate]
+
+    Local --> RegisterTask[register LocalAgentTask]
+    Worktree --> RegisterTask
+    Remote --> RegisterRemote[register RemoteAgentTask]
+    Teammate --> RegisterMate[register InProcessTeammateTask]
+
+    RegisterTask --> RunAgent[runAgent.ts]
+    RegisterRemote --> RemoteExec[remote execution path]
+    RegisterMate --> RunAgent
+
+    RunAgent --> Stream[query() stream from subagent]
+    Stream --> Progress[updateProgressFromMessage]
+    Stream --> Sidechain[record sidechain transcript / output file]
+    Progress --> AppState[AppState.tasks]
+    Sidechain --> AppState
+    AppState --> UI[panel / footer / notifications]
+```
+
+```mermaid
+stateDiagram-v2
+    [*] --> Created
+    Created --> Pending
+    Pending --> RunningForeground
+    RunningForeground --> RunningBackground: backgrounded
+    RunningForeground --> Completed
+    RunningForeground --> Failed
+    RunningForeground --> Killed
+    RunningBackground --> Completed
+    RunningBackground --> Failed
+    RunningBackground --> Killed
+    Completed --> Retained
+    Failed --> Retained
+    Killed --> Retained
+    Retained --> Evicted
+```
+
+```mermaid
+flowchart LR
+    AgentMessages[agent messages] --> ProgressTracker[ProgressTracker]
+    ProgressTracker --> Usage[input/output token accounting]
+    ProgressTracker --> Activities[recent tool activities]
+    ProgressTracker --> Summary[AgentProgress summary]
+    Summary --> TaskState[LocalAgentTaskState.progress]
+```
+
+**核心结论：**
+- AgentTool 不是“起个子 prompt”
+- 它背后挂着 task 注册、sidechain transcript、output file、progress tracker、UI retain/evict 这些正式运行时结构
+- 所以这个仓的多代理能力是 runtime 级，不是 prompt trick
 
 ### 10.4 Team / Teammate
 team 能力分散在多个点，但语义很完整：
