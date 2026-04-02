@@ -208,6 +208,94 @@ flowchart LR
 - Tool Plane 不只是“执行工具”
 - 它还负责并发边界、context modifier、生存期状态、进度上报
 
+### 5.1 StreamingToolExecutor：流式工具执行
+
+这一层还有一个很关键的优化点：**不是等 assistant 整轮输出结束后再统一执行工具，而是当流式响应里某个 `tool_use block` 已经成型时，就立刻开始执行。**
+
+对应文件：
+- `services/tools/StreamingToolExecutor.ts`
+- `query/config.ts` 中的 `streamingToolExecution` gate
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant M as Model
+    participant C as Claude Code Runtime
+    participant T1 as Tool 1
+    participant T2 as Tool 2
+
+    U->>C: 发起请求
+    C->>M: 发送上下文
+    M-->>C: 流式输出前半段
+    M-->>C: 流式输出 tool_use #1
+    Note over C: 先记录，不执行
+    M-->>C: 流式输出 tool_use #2
+    Note over C: 继续记录，不执行
+    M-->>C: 整轮输出结束
+    C->>T1: 现在才开始执行 Tool 1
+    T1-->>C: tool_result #1
+    C->>T2: 再执行 Tool 2
+    T2-->>C: tool_result #2
+```
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant M as Model
+    participant C as Claude Code Runtime
+    participant STE as StreamingToolExecutor
+    participant T1 as Tool 1
+    participant T2 as Tool 2
+
+    U->>C: 发起请求
+    C->>M: 发送上下文
+    M-->>C: 流式输出前半段
+    M-->>C: tool_use #1 成型
+    C->>STE: addTool(tool_use #1)
+    STE->>T1: 立即执行 Tool 1
+    M-->>C: 继续流式输出
+    M-->>C: tool_use #2 成型
+    C->>STE: addTool(tool_use #2)
+    alt 可并发
+        STE->>T2: 并发执行 Tool 2
+    else 不可并发
+        Note over STE: 排队等待前序工具完成
+    end
+    T1-->>STE: tool_result #1
+    STE-->>C: completed/progress
+    T2-->>STE: tool_result #2
+    STE-->>C: completed/progress
+    M-->>C: 流式输出结束
+    C->>STE: getRemainingResults()
+```
+
+```mermaid
+flowchart LR
+    A[传统模式] --> A1[等整轮 assistant 输出结束]
+    A1 --> A2[统一解析 tool_use]
+    A2 --> A3[开始执行工具]
+    A3 --> A4[返回结果]
+
+    B[StreamingToolExecutor] --> B1[流式接收 assistant 输出]
+    B1 --> B2[tool_use block 成型]
+    B2 --> B3[立即 addTool 并执行]
+    B3 --> B4[模型输出与工具执行重叠]
+    B4 --> B5[最后只收尾剩余结果]
+```
+
+**它提升的不是单个工具速度，而是端到端时延：**
+- 首个工具更早启动
+- 多工具链更容易流水化
+- 用户更早看到进度
+- 在慢工具 / 多工具 / 长流式输出场景更有价值
+
+**它带来的复杂度也更高：**
+- 结果顺序控制
+- 并发安全判定
+- 中断传播
+- fallback 后丢弃旧流结果
+- progress / completed result 的混合回流
+
 ---
 
 ## 6. Commands、Tools、Hooks 三条线别混
