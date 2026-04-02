@@ -723,13 +723,13 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    Query[Query Runtime] --> AgentTool[AgentTool]
-    AgentTool --> RunAgent[runAgent.ts]
-    AgentTool --> LocalTask[LocalAgentTask]
-    AgentTool --> RemoteTask[RemoteAgentTask]
-    AgentTool --> Teammate[InProcessTeammateTask]
-    AgentTool --> Worktree[worktree isolation]
-    AgentTool --> Team[team / teammate / SendMessage]
+    Q[Query Runtime] --> A[AgentTool]
+    A --> R[Run Agent]
+    A --> L[Local Task]
+    A --> X[Remote Task]
+    A --> T[Teammate Task]
+    A --> W[Worktree Mode]
+    A --> M[Team Messaging]
 ```
 
 ### 10.1 AgentTool 是协作入口，不只是一个工具
@@ -744,11 +744,11 @@ flowchart TD
 
 ```mermaid
 flowchart LR
-    Input[prompt + description + agent type + isolation + mode] --> AgentTool
-    AgentTool --> Sync[completed]
-    AgentTool --> Async[async_launched]
-    AgentTool --> Remote[remote_launched]
-    AgentTool --> TeamSpawn[teammate_spawned]
+    I[Task Request] --> A[AgentTool]
+    A --> S[Sync Result]
+    A --> B[Background Agent]
+    A --> R[Remote Agent]
+    A --> T[Teammate Spawn]
 ```
 
 ### 10.2 Task Runtime 是正式底座
@@ -760,12 +760,11 @@ flowchart LR
 - `killed`
 
 ```mermaid
-stateDiagram-v2
-    [*] --> Pending
-    Pending --> Running
-    Running --> Completed
-    Running --> Failed
-    Running --> Killed
+flowchart LR
+    P[Pending] --> R[Running]
+    R --> C[Completed]
+    R --> F[Failed]
+    R --> K[Killed]
 ```
 
 ### 10.3 LocalAgentTask：可观测 agent 执行单元
@@ -779,13 +778,13 @@ stateDiagram-v2
 
 ```mermaid
 flowchart TD
-    AssistantMessages[agent assistant messages] --> ProgressParse[parse usage + tool_use]
-    ProgressParse --> ToolCount[toolUseCount]
-    ProgressParse --> TokenCount[token counters]
-    ProgressParse --> Activities[recent activities]
-    Activities --> TaskState[task.progress]
-    TaskState --> Panel[task panel]
-    TaskState --> Footer[background task footer]
+    M[Agent Messages] --> P[Parse Usage and Tool Use]
+    P --> C[Tool Count]
+    P --> K[Token Count]
+    P --> A[Recent Activity]
+    A --> S[Task Progress State]
+    S --> N[Task Panel]
+    S --> F[Footer Status]
 ```
 
 ### 10.3.1 AgentTool + Task Runtime 更细状态流
@@ -798,55 +797,54 @@ AgentTool 真正落地时，至少要跨过四层：
 
 ```mermaid
 flowchart TD
-    Request[AgentTool request] --> ResolveAgent[resolve agent settings]
-    ResolveAgent --> Isolation{choose target}
-    Isolation --> Local[local]
-    Isolation --> Worktree[worktree]
-    Isolation --> Remote[remote]
-    Isolation --> Teammate[teammate]
+    A[Agent Request] --> B[Resolve Agent]
+    B --> C{Choose Target}
+    C --> D[Local]
+    C --> E[Worktree]
+    C --> F[Remote]
+    C --> G[Teammate]
 
-    Local --> RegisterTask[register local task]
-    Worktree --> RegisterTask
-    Remote --> RegisterRemote[register remote task]
-    Teammate --> RegisterMate[register teammate task]
+    D --> H[Register Local Task]
+    E --> H
+    F --> I[Register Remote Task]
+    G --> J[Register Teammate Task]
 
-    RegisterTask --> RunAgent[runAgent]
-    RegisterRemote --> RemoteExec[remote path]
-    RegisterMate --> RunAgent
+    H --> K[Run Agent]
+    I --> L[Remote Path]
+    J --> K
 
-    RunAgent --> Stream[subagent stream]
-    Stream --> Progress[progress update]
-    Stream --> Sidechain[sidechain transcript and output]
-    Progress --> AppState[task state in AppState]
-    Sidechain --> AppState
-    AppState --> UI[panel footer notifications]
+    K --> M[Agent Stream]
+    M --> N[Progress Update]
+    M --> O[Side Output]
+    N --> P[App State]
+    O --> P
+    P --> Q[UI]
 ```
 
 ```mermaid
-stateDiagram-v2
-    [*] --> Created
-    Created --> Pending
-    Pending --> RunningForeground
-    RunningForeground --> RunningBackground: backgrounded
-    RunningForeground --> Completed
-    RunningForeground --> Failed
-    RunningForeground --> Killed
-    RunningBackground --> Completed
-    RunningBackground --> Failed
-    RunningBackground --> Killed
-    Completed --> Retained
-    Failed --> Retained
-    Killed --> Retained
-    Retained --> Evicted
+flowchart TD
+    A1[Created] --> A2[Pending]
+    A2 --> A3[Running Foreground]
+    A3 --> A4[Running Background]
+    A3 --> A5[Completed]
+    A3 --> A6[Failed]
+    A3 --> A7[Killed]
+    A4 --> A5
+    A4 --> A6
+    A4 --> A7
+    A5 --> A8[Retained]
+    A6 --> A8
+    A7 --> A8
+    A8 --> A9[Evicted]
 ```
 
 ```mermaid
 flowchart LR
-    AgentMessages[agent messages] --> ProgressTracker[progress tracker]
-    ProgressTracker --> Usage[token accounting]
-    ProgressTracker --> Activities[recent tool activity]
-    ProgressTracker --> Summary[progress summary]
-    Summary --> TaskState[task progress state]
+    B1[Agent Messages] --> B2[Progress Tracker]
+    B2 --> B3[Token Data]
+    B2 --> B4[Recent Activity]
+    B2 --> B5[Progress Summary]
+    B5 --> B6[Task Progress State]
 ```
 
 **核心结论：**
@@ -864,10 +862,10 @@ team 能力分散在多个点，但语义很完整：
 
 ```mermaid
 flowchart LR
-    TeamCreate[TeamCreateTool] --> Registry[agentNameRegistry / team context]
-    AgentTool --> Registry
-    SendMessage[SendMessageTool] --> Registry
-    Registry --> TargetAgent[teammate task / agent task]
+    T1[Team Create] --> T2[Name Registry]
+    A[AgentTool] --> T2
+    S[Send Message] --> T2
+    T2 --> T3[Target Agent Task]
 ```
 
 **核心结论：**
