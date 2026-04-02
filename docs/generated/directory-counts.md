@@ -1,0 +1,45 @@
+# src/ 一级目录文件数统计
+
+| 目录 | 文件数 |
+|---|---:|
+| `utils/` | 570 |
+| `components/` | 396 |
+| `commands/` | 221 |
+| `tools/` | 211 |
+| `services/` | 144 |
+| `hooks/` | 104 |
+| `ink/` | 100 |
+| `bridge/` | 31 |
+| `constants/` | 22 |
+| `cli/` | 22 |
+| `skills/` | 21 |
+| `types/` | 19 |
+| `keybindings/` | 15 |
+| `tasks/` | 14 |
+| `entrypoints/` | 12 |
+| `migrations/` | 11 |
+| `server/` | 9 |
+| `context/` | 9 |
+| `memdir/` | 8 |
+| `state/` | 6 |
+| `buddy/` | 6 |
+| `vim/` | 5 |
+| `query/` | 5 |
+| `remote/` | 4 |
+| `native-ts/` | 4 |
+| `assistant/` | 4 |
+| `screens/` | 3 |
+| `upstreamproxy/` | 2 |
+| `ssh/` | 2 |
+| `proactive/` | 2 |
+| `plugins/` | 2 |
+| `daemon/` | 2 |
+| `coordinator/` | 2 |
+| `voice/` | 1 |
+| `self-hosted-runner/` | 1 |
+| `schemas/` | 1 |
+| `outputStyles/` | 1 |
+| `moreright/` | 1 |
+| `jobs/` | 1 |
+| `environment-runner/` | 1 |
+| `bootstrap/` | 1 |
