@@ -23,6 +23,9 @@
 
 ## 阅读顺序
 
+### 0. 单篇总图版（推荐先看）
+- [`docs/00-architecture-all-in-one.md`](docs/00-architecture-all-in-one.md)
+
 ### 1. 全局结构
 - [`docs/01-system-overview.md`](docs/01-system-overview.md)
 - [`docs/02-startup-and-composition-root.md`](docs/02-startup-and-composition-root.md)
