@@ -41,8 +41,12 @@
 - [`docs/08-agent-task-team-architecture.md`](docs/08-agent-task-team-architecture.md)
 - [`docs/09-state-session-storage-and-persistence.md`](docs/09-state-session-storage-and-persistence.md)
 
-### 4. 文件与符号索引
+### 4. 文件 / 压缩专题
 - [`docs/10-key-files-and-entrypoints.md`](docs/10-key-files-and-entrypoints.md)
+- [`docs/11-file-history-and-snapshots.md`](docs/11-file-history-and-snapshots.md)
+- [`docs/12-compaction-and-post-compact-context.md`](docs/12-compaction-and-post-compact-context.md)
+
+### 5. 生成索引
 - [`docs/generated/directory-counts.md`](docs/generated/directory-counts.md)
 - [`docs/generated/root-files.md`](docs/generated/root-files.md)
 - [`docs/generated/key-file-symbols.md`](docs/generated/key-file-symbols.md)
